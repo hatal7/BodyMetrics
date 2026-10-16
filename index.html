@@ -37,7 +37,7 @@
     <form id="authForm">
       <label class="field"><span>Login</span><input id="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Wpisz swój login" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}" /></label>
       <label class="field"><span>Hasło</span><input id="password" type="password" autocomplete="current-password" minlength="8" placeholder="Minimum 8 znaków" required /></label>
-      <button id="authSubmit" class="btn full" type="submit">Otwórz panel ↗</button>
+      <button id="authSubmit" class="btn full" type="submit">Zaloguj się ↗</button>
     </form>
     <div id="authMessage" class="notice hidden" role="status"></div>
 
@@ -95,5 +95,5 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
 <script src="./config.js"></script>
-<script src="./app.js" defer></script><script>if("serviceWorker" in navigator && location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(console.warn)</script>
+<script src="./app.js?v=3" defer onerror="document.getElementById('authMessage').textContent='Nie udało się wczytać aplikacji. Odśwież stronę.';document.getElementById('authMessage').classList.remove('hidden')"></script><script>if("serviceWorker" in navigator && location.protocol==="https:")navigator.serviceWorker.register("./sw.js").catch(console.warn)</script>
 </body></html>

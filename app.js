@@ -18,12 +18,13 @@ function applyTheme(mode){mode=mode==='light'?'light':'dark';document.documentEl
 document.addEventListener('click',e=>{if(e.target.closest('[data-theme-toggle]'))applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')});initTheme();
 function ensureConfigured(){const cfg=window.BODYMETRICS_CONFIG||{};if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(cfg.url||'')||!cfg.anonKey||/WSTAW|YOUR_|PLACEHOLDER/i.test(cfg.anonKey))return false;if(!window.supabase)return false;state.client=window.supabase.createClient(cfg.url,cfg.anonKey,{auth:{autoRefreshToken:true,persistSession:true,detectSessionInUrl:true}});return true}
 async function init(){if(!ensureConfigured()){authMessage('Aplikacja wymaga ustawienia adresu Supabase i klucza publicznego w pliku config.js oraz uruchomienia database.sql. Instrukcja znajduje się w README.md.',true);$('authSubmit').disabled=true;return}
+  $('authSubmit').disabled=false;
   state.client.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){showAuth();return}if(session?.user && (!state.user||state.user.id!==session.user.id)){setTimeout(()=>enterApp(session.user),0)}});
   const {data,error}=await state.client.auth.getSession();if(error)authMessage(fromError(error),true);if(data?.session?.user)await enterApp(data.session.user);
 }
 $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!state.client)return;
   const username=$('username').value.trim().toLowerCase(),password=$('password').value;
-  const btn=$('authSubmit');btn.disabled=true;$('authMessage').classList.add('hidden');
+  const btn=$('authSubmit');btn.disabled=true;btn.textContent='Logowanie…';authMessage('Łączenie z serwerem logowania…');
   try{
     if(!/^[a-z0-9_]{3,30}$/.test(username))throw new Error('Login musi mieć od 3 do 30 znaków: małe litery, cyfry lub _.');
     const config=window.BODYMETRICS_CONFIG;
@@ -32,12 +33,12 @@ $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!state.c
       body:JSON.stringify({username,password})
     });
     const payload=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(response.status===401?'Nieprawidłowy login lub hasło.':(payload.error||'Nie udało się zalogować.'));
+    if(!response.ok)throw new Error(response.status===401?'Nieprawidłowy login lub hasło.':response.status===404?'Nie znaleziono funkcji login-by-username w Supabase.':response.status===429?'Zbyt wiele prób. Spróbuj później.':(payload.error||('Błąd funkcji logowania (HTTP '+response.status+').')));
     if(!payload.access_token||!payload.refresh_token)throw new Error('Serwer nie zwrócił ważnej sesji.');
     const {data,error}=await state.client.auth.setSession({access_token:payload.access_token,refresh_token:payload.refresh_token});
     if(error)throw error;
     if(data.user)await enterApp(data.user);
-  }catch(error){authMessage(fromError(error),true)}finally{btn.disabled=false}
+  }catch(error){console.error('BodyMetrics login:',error);authMessage(fromError(error),true)}finally{btn.disabled=false;btn.textContent='Zaloguj się ↗'}
 });
 async function enterApp(user){state.user=user;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('userChip').textContent='Moje konto';$('accountEmail').textContent='Prywatne konto';$('today').textContent=new Date().toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});$('measuredAt').value=localDate();showTab('dashboard');await loadRecords()}
 function showAuth(){state.user=null;state.records=[];state.loadSeq++;Object.values(state.charts).forEach(c=>c.destroy());state.charts={};$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('password').value=''}
@@ -70,5 +71,5 @@ function renderCharts(){if(!state.user||!window.Chart)return;const light=documen
 function csvCell(value){const v=String(value??'');return '"'+v.replace(/"/g,'""')+'"'}
 $('exportCsv').addEventListener('click',()=>{const headers=['data','masa_kg','talia_cm','biodra_cm','klatka_cm','udo_cm','ramie_cm','notatka'];const rows=state.records.map(r=>[r.measured_at,...FIELDS.map(f=>r[f]),r.note]);const csv='\ufeff'+[headers,...rows].map(row=>row.map(csvCell).join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`BodyMetrics-pomiary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 window.addEventListener('focus',()=>{if(state.user)loadRecords()});document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.user)loadRecords()});
-init();
+init().catch(error=>{console.error('BodyMetrics init:',error);authMessage('Nie udało się uruchomić logowania: '+fromError(error),true)});
 })();
