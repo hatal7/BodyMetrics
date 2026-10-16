@@ -3,8 +3,8 @@ const $=id=>document.getElementById(id);
 const FIELDS=['weight','waist','hips','chest','thigh','arm'];
 const LABELS={weight:'Masa ciała',waist:'Talia',hips:'Biodra',chest:'Klatka piersiowa',thigh:'Udo',arm:'Ramię'};
 const UNITS={weight:'kg',waist:'cm',hips:'cm',chest:'cm',thigh:'cm',arm:'cm'};
-const CHARTS={weightChart:'weight',waistChart:'waist',analysisWeight:'weight',analysisWaist:'waist',analysisHips:'hips',analysisChest:'chest',analysisThigh:'thigh',analysisArm:'arm'};
-const state={client:null,user:null,records:[],charts:{},tab:'dashboard',range:{dashboard:'30',analysis:'30'},authMode:'login',editing:null,busy:false,loadSeq:0};
+const CHARTS={weightChart:'weight',analysisWeight:'weight',analysisWaist:'waist',analysisHips:'hips',analysisChest:'chest',analysisThigh:'thigh',analysisArm:'arm'};
+const state={client:null,user:null,records:[],charts:{},tab:'dashboard',range:{dashboard:'all',analysis:'30'},authMode:'login',editing:null,busy:false,loadSeq:0};
 function localDate(d=new Date()){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function fmtDay(date){if(!date)return '—';const [y,m,d]=date.split('-');return `${d}.${m}.${y}`}
 function fmtNum(value,digits=1){return Number(value).toLocaleString('pl-PL',{minimumFractionDigits:digits,maximumFractionDigits:digits})}
@@ -40,7 +40,7 @@ $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!state.c
     if(data.user)await enterApp(data.user);
   }catch(error){console.error('BodyMetrics login:',error);authMessage(fromError(error),true)}finally{btn.disabled=false;btn.textContent='Zaloguj się ↗'}
 });
-async function enterApp(user){state.user=user;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('userChip').textContent='Moje konto';$('accountEmail').textContent='Prywatne konto';$('today').textContent=new Date().toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});$('measuredAt').value=localDate();showTab('dashboard');await loadRecords()}
+async function enterApp(user){state.user=user;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('userChip').textContent='Moje konto';$('accountEmail').textContent='Prywatne konto';$('today').textContent=new Date().toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});$('measuredAt').value=localDate();$('quickWeightDate').textContent=fmtDay(localDate());showTab('dashboard');await loadRecords()}
 function showAuth(){state.user=null;state.records=[];state.loadSeq++;Object.values(state.charts).forEach(c=>c.destroy());state.charts={};$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('password').value=''}
 async function logout(){const {error}=await state.client.auth.signOut();if(error)toast(fromError(error),true);else showAuth()}
 document.querySelectorAll('[data-logout]').forEach(b=>b.addEventListener('click',logout));
@@ -52,20 +52,68 @@ async function loadRecords(){if(!state.user)return;const seq=++state.loadSeq;con
 function rangeRecords(kind){const range=state.range[kind];if(range==='all')return state.records;const today=new Date(),start=new Date(today.getFullYear(),today.getMonth(),today.getDate());start.setDate(start.getDate()-Number(range)+1);return state.records.filter(row=>row.measured_at>=localDate(start)&&row.measured_at<=localDate(today))}
 function valuesFor(records,key){return records.filter(r=>r[key]!==null&&r[key]!==undefined).map(r=>({date:r.measured_at,value:Number(r[key])}))}
 function deltaText(values,unit){if(!values.length)return 'Brak zapisanych wartości w wybranym okresie.';if(values.length===1)return 'Na razie jeden pomiar w wybranym okresie.';const delta=values.at(-1).value-values[0].value;return `Pierwszy pomiar: ${fmtNum(values[0].value)} ${unit} · Ostatni: ${fmtNum(values.at(-1).value)} ${unit} · Zmiana: ${delta>0?'+':''}${fmtNum(delta)} ${unit}`}
-function renderAll(){const records=state.records;const weights=valuesFor(records,'weight'),latest=records.at(-1);$('lastWeight').textContent=weights.length?fmtNum(weights.at(-1).value)+' kg':'—';$('lastWeightDate').textContent=weights.length?fmtDay(weights.at(-1).date):'Brak danych';$('weightChange').textContent=weights.length>1?`${weights.at(-1).value-weights[0].value>0?'+':''}${fmtNum(weights.at(-1).value-weights[0].value)} kg`:'—';$('totalEntries').textContent=records.length;$('lastDate').textContent=latest?fmtDay(latest.measured_at).slice(0,5):'—';$('historyCount').textContent=records.length+' wpisów';renderRecent();renderHistory();renderCharts()}
+function renderAll(){renderCircumferenceChanges();const records=state.records;const weights=valuesFor(records,'weight'),latest=records.at(-1);$('lastWeight').textContent=weights.length?fmtNum(weights.at(-1).value)+' kg':'—';$('lastWeightDate').textContent=weights.length?fmtDay(weights.at(-1).date):'Brak danych';$('weightChange').textContent=weights.length>1?`${weights.at(-1).value-weights[0].value>0?'+':''}${fmtNum(weights.at(-1).value-weights[0].value)} kg`:'—';$('totalEntries').textContent=records.length;$('lastDate').textContent=latest?fmtDay(latest.measured_at).slice(0,5):'—';$('historyCount').textContent=records.length+' wpisów';renderRecent();renderHistory();renderCharts()}
+function renderCircumferenceChanges(){
+  const el=$('circumferenceChanges');
+  el.innerHTML=FIELDS.filter(f=>f!=='weight').map(key=>{
+    const vals=valuesFor(state.records,key), last=vals.at(-1), previous=vals.at(-2);
+    const diff=last&&previous?Math.round((last.value-previous.value)*10)/10:null;
+    const label=diff===null?'Brak poprzedniego pomiaru':`${diff>0?'+':''}${fmtNum(diff)} cm względem poprzedniego`;
+    const trend=diff===null||diff===0?'same':diff<0?'down':'up';
+    return `<div class="circumference-item"><div class="c-label">${LABELS[key]}</div><div class="c-value">${last?fmtNum(last.value)+' cm':'—'}</div><div class="c-delta ${trend}">${label}</div><div class="hint">${last?fmtDay(last.date):'Brak danych'}</div></div>`;
+  }).join('');
+}
+$('quickWeightForm').addEventListener('submit',async e=>{
+  e.preventDefault();if(!state.user||state.busy)return;
+  if(!navigator.onLine){toast('Brak połączenia — nie zapisano pomiaru.',true);return}
+  const raw=$('quickWeight').value.trim(),weight=Number(raw),today=localDate();
+  if(!raw||!Number.isFinite(weight)||weight<=0||weight>500){toast('Podaj poprawną masę ciała.',true);return}
+  state.busy=true;const button=$('quickWeightSave');button.disabled=true;button.textContent='Zapisywanie…';
+  try{
+    const existing=state.records.find(r=>r.measured_at===today);
+    const response=existing
+      ? await state.client.from('measurements').update({weight}).eq('id',existing.id).eq('user_id',state.user.id).select('id').single()
+      : await state.client.from('measurements').insert({user_id:state.user.id,measured_at:today,weight}).select('id').single();
+    if(response.error)throw response.error;
+    $('quickWeight').value='';await loadRecords();toast('Dzisiejszy pomiar zapisany i uwzględniony na wykresie.');
+  }catch(error){toast(fromError(error),true)}finally{state.busy=false;button.disabled=false;button.textContent='Zapisz wagę'}
+});
 function renderRecent(){const records=[...state.records].reverse().slice(0,4);$('recentRecords').innerHTML=records.length?records.map(r=>`<div class="record"><div><strong>${fmtDay(r.measured_at)}</strong><div class="record-sub">${FIELDS.filter(f=>r[f]!=null).map(f=>`${LABELS[f]}: ${fmtNum(r[f])} ${UNITS[f]}`).join(' · ')}</div></div><button type="button" class="btn small secondary" data-edit="${r.id}">Edytuj</button></div>`).join(''):'<div class="empty">Nie ma jeszcze pomiarów. Dodaj pierwszy wpis.</div>'}
 function renderHistory(){const records=[...state.records].reverse();$('historyEmpty').classList.toggle('hidden',records.length>0);$('historyBody').innerHTML=records.map(r=>`<tr><td><strong>${fmtDay(r.measured_at)}</strong>${r.note?`<div class="record-sub" title="${esc(r.note)}">📝 Notatka</div>`:''}</td>${FIELDS.map(f=>`<td>${r[f]==null?'—':fmtNum(r[f])}</td>`).join('')}<td><button type="button" class="btn small secondary" data-edit="${r.id}">Edytuj</button><button type="button" class="btn small danger" data-delete="${r.id}">Usuń</button></td></tr>`).join('')}
 document.addEventListener('click',e=>{const edit=e.target.closest('[data-edit]'),del=e.target.closest('[data-delete]');if(edit){editMeasurement(edit.dataset.edit)}else if(del){const record=state.records.find(r=>r.id===del.dataset.delete);if(record)confirmAction('Usunąć pomiar?',`Usunąć wpis z dnia ${fmtDay(record.measured_at)}? Tej operacji nie można cofnąć.`,async()=>{const {error}=await state.client.from('measurements').delete().eq('id',record.id).eq('user_id',state.user.id);if(error)throw error;toast('Pomiar usunięty.');await loadRecords()})}});
-function resetForm(){state.editing=null;$('measurementForm').reset();$('measuredAt').value=localDate();$('formTitle').textContent='Nowy pomiar';$('saveMeasurement').textContent='Zapisz pomiar';$('cancelEdit').classList.add('hidden')}
-function editMeasurement(id){const r=state.records.find(x=>x.id===id);if(!r)return;state.editing=id;$('measuredAt').value=r.measured_at;FIELDS.forEach(f=>$(f).value=r[f]??'');$('measurementNote').value=r.note||'';$('formTitle').textContent='Edytuj pomiar';$('saveMeasurement').textContent='Zapisz zmiany';$('cancelEdit').classList.remove('hidden');showTab('add')}
+function resetForm(){state.editing=null;$('measurementForm').reset();$('measuredAt').value=localDate();$('formTitle').textContent='Nowy pomiar obwodów';$('editWeightField').classList.add('hidden');$('saveMeasurement').textContent='Zapisz pomiar';$('cancelEdit').classList.add('hidden')}
+function editMeasurement(id){const r=state.records.find(x=>x.id===id);if(!r)return;state.editing=id;$('editWeightField').classList.remove('hidden');$('measuredAt').value=r.measured_at;FIELDS.forEach(f=>$(f).value=r[f]??'');$('measurementNote').value=r.note||'';$('formTitle').textContent='Edytuj pomiar';$('saveMeasurement').textContent='Zapisz zmiany';$('cancelEdit').classList.remove('hidden');showTab('add')}
 $('cancelEdit').addEventListener('click',resetForm);
 $('measurementForm').addEventListener('submit',async e=>{e.preventDefault();if(state.busy||!state.user)return;if(!navigator.onLine){toast('Bez internetu nie można zapisać pomiaru.',true);return}const measured_at=$('measuredAt').value;if(!/^\d{4}-\d{2}-\d{2}$/.test(measured_at)){toast('Podaj poprawną datę.',true);return}if(measured_at>localDate()){toast('Data pomiaru nie może być przyszła.',true);return}
-  const payload={measured_at,note:$('measurementNote').value.trim()||null};let any=false;for(const f of FIELDS){const raw=$(f).value.trim();const value=raw===''?null:Number(raw);if(value!==null&&(!Number.isFinite(value)||value<=0)){toast(`Podaj poprawną wartość pola ${LABELS[f]}.`,true);return}payload[f]=value;if(value!==null)any=true}if(!any){toast('Wprowadź co najmniej jeden pomiar.',true);return}
-  state.busy=true;$('saveMeasurement').disabled=true;try{let response;if(state.editing)response=await state.client.from('measurements').update(payload).eq('id',state.editing).eq('user_id',state.user.id).select('id').single();else response=await state.client.from('measurements').insert({...payload,user_id:state.user.id}).select('id').single();if(response.error)throw response.error;toast('Pomiar zapisany.');resetForm();await loadRecords();showTab('dashboard')}catch(error){toast(fromError(error),true)}finally{state.busy=false;$('saveMeasurement').disabled=false}});
+  const payload={measured_at};let any=false;
+  for(const f of FIELDS.filter(f=>f!=='weight'||state.editing)){
+    const raw=$(f).value.trim(),value=raw===''?null:Number(raw);
+    if(value!==null&&(!Number.isFinite(value)||value<=0)){toast(`Podaj poprawną wartość pola ${LABELS[f]}.`,true);return}
+    if(f!=='weight'&&value!==null)any=true;
+    payload[f]=value;
+  }
+  if(!any&&!state.editing){toast('Wprowadź przynajmniej jeden obwód w cm.',true);return}
+  const note=$('measurementNote').value.trim();
+  state.busy=true;$('saveMeasurement').disabled=true;
+  try{
+    let response;
+    if(state.editing){payload.note=note||null;response=await state.client.from('measurements').update(payload).eq('id',state.editing).eq('user_id',state.user.id).select('id').single()}
+    else{
+      const existing=state.records.find(r=>r.measured_at===measured_at);
+      if(existing){
+        const patch={};for(const f of FIELDS.filter(f=>f!=='weight'))if(payload[f]!==null)patch[f]=payload[f];
+        if(note)patch.note=note;
+        response=await state.client.from('measurements').update(patch).eq('id',existing.id).eq('user_id',state.user.id).select('id').single();
+      }else{response=await state.client.from('measurements').insert({...payload,note:note||null,user_id:state.user.id}).select('id').single()}
+    }
+    if(response.error)throw response.error;
+    toast('Obwody zostały zapisane.');resetForm();await loadRecords();showTab('add');
+  }catch(error){toast(fromError(error),true)}finally{state.busy=false;$('saveMeasurement').disabled=false}
+});
 function confirmAction(title,message,action){const dialog=$('confirmDialog');$('confirmTitle').textContent=title;$('confirmText').textContent=message;const yes=$('confirmYes'),cancel=$('confirmCancel');yes.disabled=false;yes.onclick=async()=>{yes.disabled=true;try{await action();dialog.close()}catch(error){toast(fromError(error),true)}finally{yes.disabled=false}};cancel.onclick=()=>dialog.close();dialog.showModal()}
 $('deleteAccountData').addEventListener('click',()=>{if(!state.user)return;confirmAction('Usunąć wszystkie pomiary?',`Wszystkie ${state.records.length} wpisy zostaną trwale usunięte. Konto pozostanie aktywne.`,async()=>{const {error}=await state.client.from('measurements').delete().eq('user_id',state.user.id);if(error)throw error;toast('Pomiary zostały usunięte.');await loadRecords()})});
 function chartColor(name){const light=document.documentElement.dataset.theme==='light';return name==='weight'?(light?'#648f26':'#c7f56e'):(light?'#477d95':'#8ad5f3')}
-function renderCharts(){if(!state.user||!window.Chart)return;const light=document.documentElement.dataset.theme==='light';const textColor=light?'#647064':'#a4abb9';const gridColor=light?'#dce0d8':'#313741';Object.entries(CHARTS).forEach(([canvasId,key])=>{const isAnalysis=canvasId.startsWith('analysis');if((isAnalysis?'analysis':'dashboard')!==state.tab)return;const canvas=$(canvasId);if(!canvas)return;const points=valuesFor(rangeRecords(isAnalysis?'analysis':'dashboard'),key),color=chartColor(key);const prior=state.charts[canvasId];if(prior){prior.destroy();delete state.charts[canvasId]}
+function renderCharts(){if(!state.user||!window.Chart)return;const light=document.documentElement.dataset.theme==='light';const textColor=light?'#647064':'#a4abb9';const gridColor=light?'#dce0d8':'#313741';Object.entries(CHARTS).forEach(([canvasId,key])=>{const isAnalysis=canvasId.startsWith('analysis');if((isAnalysis?'analysis':'dashboard')!==state.tab)return;const canvas=$(canvasId);if(!canvas)return;const points=valuesFor(isAnalysis?rangeRecords('analysis'):state.records,key),color=chartColor(key);const prior=state.charts[canvasId];if(prior){prior.destroy();delete state.charts[canvasId]}
     state.charts[canvasId]=new Chart(canvas,{type:'line',data:{labels:points.map(p=>fmtDay(p.date).slice(0,5)),datasets:[{label:LABELS[key]+' ('+UNITS[key]+')',data:points.map(p=>p.value),borderColor:color,backgroundColor:color+'24',fill:true,tension:.25,spanGaps:false,pointRadius:points.length>35?1.5:3,pointHoverRadius:5,borderWidth:2.4}]},options:{responsive:true,maintainAspectRatio:false,animation:false,locale:'pl-PL',plugins:{legend:{display:false},tooltip:{callbacks:{title(items){return points[items[0].dataIndex]?.date?fmtDay(points[items[0].dataIndex].date):''},label(ctx){return `${LABELS[key]}: ${fmtNum(ctx.parsed.y)} ${UNITS[key]}`}}}},scales:{x:{ticks:{color:textColor,maxTicksLimit:6,maxRotation:0},grid:{display:false},border:{color:gridColor}},y:{ticks:{color:textColor,maxTicksLimit:6},grid:{color:gridColor},border:{display:false}}}}});if(isAnalysis){const summary=$('summary'+canvasId.slice('analysis'.length));if(summary)summary.textContent=deltaText(points,UNITS[key])}
   })}
 function csvCell(value){const v=String(value??'');return '"'+v.replace(/"/g,'""')+'"'}
