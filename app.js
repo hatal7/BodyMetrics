@@ -84,18 +84,41 @@ function fillWeightChartDays(actual){
   }
   return points;
 }
+function rollingWeightMean(points,actual){
+  // Wyliczana tylko z prawdziwych zapisów w oknie siedmiu dni,
+  // także gdy wykres prezentuje zakres krótszy niż cała historia.
+  const values=valuesFor(state.records,'weight');
+  return points.map(p=>{
+    const end=Date.parse(p.date+'T00:00:00Z'),begin=end-6*86400000;
+    const sample=values.filter(v=>{const d=Date.parse(v.date+'T00:00:00Z');return d>=begin&&d<=end});
+    return sample.length?Math.round(sample.reduce((a,b)=>a+b.value,0)/sample.length*100)/100:null;
+  });
+}
 function deltaText(values,unit){if(!values.length)return 'Brak zapisanych wartości w wybranym okresie.';if(values.length===1)return 'Na razie jeden pomiar w wybranym okresie.';const delta=values.at(-1).value-values[0].value;return `Pierwszy pomiar: ${fmtNum(values[0].value)} ${unit} · Ostatni: ${fmtNum(values.at(-1).value)} ${unit} · Zmiana: ${delta>0?'+':''}${fmtNum(delta)} ${unit}`}
 function renderAll(){renderCircumferenceChanges();const records=state.records;const weights=valuesFor(records,'weight'),latest=records.at(-1);$('lastWeight').textContent=weights.length?fmtNum(weights.at(-1).value)+' kg':'—';$('lastWeightDate').textContent=weights.length?fmtDay(weights.at(-1).date):'Brak danych';$('weightChange').textContent=weights.length>1?`${weights.at(-1).value-weights[0].value>0?'+':''}${fmtNum(weights.at(-1).value-weights[0].value)} kg`:'—';$('totalEntries').textContent=records.length;$('lastDate').textContent=latest?fmtDay(latest.measured_at).slice(0,5):'—';$('historyCount').textContent=records.length+' wpisów';renderRecent();renderHistory();renderCharts()}
 function renderCircumferenceChanges(){
-  const el=$('circumferenceChanges');
+  const el=$('circumferenceChanges'),from=$('circFrom'),to=$('circTo');
+  const records=state.records.filter(r=>FIELDS.some(f=>f!=='weight'&&r[f]!=null));
+  const dates=records.map(r=>r.measured_at);
+  const beforeFrom=from.value,beforeTo=to.value;
+  for(const el of [from,to])el.replaceChildren(...dates.map(date=>new Option(fmtDay(date),date)));
+  from.value=dates.includes(beforeFrom)?beforeFrom:(dates.length>1?dates.at(-2):dates[0]||'');
+  to.value=dates.includes(beforeTo)?beforeTo:(dates.at(-1)||'');
+  const earlier=state.records.find(r=>r.measured_at===from.value),later=state.records.find(r=>r.measured_at===to.value);
+  if(!dates.length){el.innerHTML='<div class="empty">Brak zapisanych obwodów do porównania.</div>';return}
   el.innerHTML=FIELDS.filter(f=>f!=='weight').map(key=>{
-    const vals=valuesFor(state.records,key), last=vals.at(-1), previous=vals.at(-2);
-    const diff=last&&previous?Math.round((last.value-previous.value)*10)/10:null;
-    const label=diff===null?'Brak poprzedniego pomiaru':`${diff>0?'+':''}${fmtNum(diff)} cm względem poprzedniego`;
-    const trend=diff===null||diff===0?'same':diff<0?'down':'up';
-    return `<div class="circumference-item"><div class="c-label">${LABELS[key]}</div><div class="c-value">${last?fmtNum(last.value)+' cm':'—'}</div><div class="c-delta ${trend}">${label}</div><div class="hint">${last?fmtDay(last.date):'Brak danych'}</div></div>`;
+    const current=later?.[key],old=earlier?.[key],valid=current!=null&&old!=null;
+    const delta=valid?Math.round((Number(current)-Number(old))*10)/10:null;
+    const trend=delta===null||delta===0?'same':delta<0?'down':'up';
+    const label=valid?(delta===0?'Bez zmian':`${delta>0?'+':''}${fmtNum(delta)} cm`):'Brak danych do porównania';
+    return `<div class="circumference-item"><div class="c-label">${LABELS[key]}</div><div class="c-value">${current!=null?fmtNum(current)+' cm':'—'}</div><div class="c-delta ${trend}">${label}</div><div class="hint">${old!=null?'Wcześniej: '+fmtNum(old)+' cm':'Brak wcześniejszego wpisu'}</div></div>`;
   }).join('');
 }
+const quickDialog=$('quickWeightDialog');
+$('openQuickWeight').addEventListener('click',()=>{if(!state.user)return;$('quickWeightDate').textContent=fmtDay(localDate());quickDialog.showModal();$('quickWeight').focus()});
+$('closeQuickWeight').addEventListener('click',()=>quickDialog.close());
+$('circFrom').addEventListener('change',renderCircumferenceChanges);
+$('circTo').addEventListener('change',renderCircumferenceChanges);
 const quickStatus=$('quickWeightStatus');
 function showQuickStatus(message,error=false){
   if(!quickStatus)return;
@@ -139,7 +162,7 @@ $('quickWeightForm').addEventListener('submit',async e=>{
     showQuickStatus(`Zapisano ${fmtNum(result.data.weight)} kg (${fmtDay(result.data.measured_at)}). Odświeżam wykres…`);
     // Aktualizujemy local state dopiero z danych potwierdzonych przez bazę.
     await loadRecords();
-    showQuickStatus(`Zapisano ${fmtNum(result.data.weight)} kg w Supabase. Pomiar jest dostępny w historii.`);
+    showQuickStatus(`Zapisano ${fmtNum(result.data.weight)} kg w Supabase. Pomiar jest dostępny w historii.`);toast('Zapisano dzisiejszą wagę.');quickDialog.close();
   }catch(error){
     console.error('BodyMetrics: zapis masy ciała',error);
     const message=fromError(error);
@@ -182,7 +205,7 @@ function confirmAction(title,message,action){const dialog=$('confirmDialog');$('
 $('deleteAccountData').addEventListener('click',()=>{if(!state.user)return;confirmAction('Usunąć wszystkie pomiary?',`Wszystkie ${state.records.length} wpisy zostaną trwale usunięte. Konto pozostanie aktywne.`,async()=>{const {error}=await state.client.from('measurements').delete().eq('user_id',state.user.id);if(error)throw error;toast('Pomiary zostały usunięte.');await loadRecords()})});
 function chartColor(name){const light=document.documentElement.dataset.theme==='light';return name==='weight'?(light?'#648f26':'#c7f56e'):(light?'#477d95':'#8ad5f3')}
 function renderCharts(){if(!state.user||!window.Chart)return;const light=document.documentElement.dataset.theme==='light';const textColor=light?'#647064':'#a4abb9';const gridColor=light?'#dce0d8':'#313741';Object.entries(CHARTS).forEach(([canvasId,key])=>{const isAnalysis=canvasId.startsWith('analysis');if((isAnalysis?'analysis':'dashboard')!==state.tab)return;const canvas=$(canvasId);if(!canvas)return;const actual=valuesFor(rangeRecords(isAnalysis?'analysis':'dashboard'),key),points=key==='weight'?fillWeightChartDays(actual):actual,color=chartColor(key);if(canvasId==='weightChart'){const label=$('dashboardRangeLabel');if(label)label.textContent=({7:'7 dni',30:'30 dni',90:'90 dni','6m':'6 miesięcy','1y':'Rok',all:'Cały okres'})[state.range.dashboard]+' · kg'}const prior=state.charts[canvasId];if(prior){prior.destroy();delete state.charts[canvasId]}
-    state.charts[canvasId]=new Chart(canvas,{type:'line',data:{labels:points.map(p=>fmtDay(p.date).slice(0,5)),datasets:[{label:LABELS[key]+' ('+UNITS[key]+')',data:points.map(p=>p.value),borderColor:color,backgroundColor:color+'24',fill:true,tension:.25,spanGaps:false,pointRadius:(ctx)=>points[ctx.dataIndex]?.carried?0:(points.length>35?1.5:3),pointHoverRadius:5,borderWidth:2.4}]},options:{responsive:true,maintainAspectRatio:false,animation:false,locale:'pl-PL',plugins:{legend:{display:false},tooltip:{callbacks:{title(items){return points[items[0].dataIndex]?.date?fmtDay(points[items[0].dataIndex].date):''},label(ctx){return `${LABELS[key]}: ${fmtNum(ctx.parsed.y)} ${UNITS[key]}${points[ctx.dataIndex]?.carried?' (ostatni znany pomiar)':''}`}}}},scales:{x:{ticks:{color:textColor,maxTicksLimit:6,maxRotation:0},grid:{display:false},border:{color:gridColor}},y:{ticks:{color:textColor,maxTicksLimit:6},grid:{color:gridColor},border:{display:false}}}}});if(isAnalysis){const summary=$('summary'+canvasId.slice('analysis'.length));if(summary)summary.textContent=deltaText(actual,UNITS[key])}
+    state.charts[canvasId]=new Chart(canvas,{type:'line',data:{labels:points.map(p=>fmtDay(p.date).slice(0,5)),datasets:[{label:LABELS[key]+' ('+UNITS[key]+')',data:points.map(p=>p.value),borderColor:color,backgroundColor:color+'24',fill:true,tension:.25,spanGaps:false,pointRadius:(ctx)=>points[ctx.dataIndex]?.carried?0:(points.length>35?1.5:3),pointHoverRadius:5,borderWidth:2.4},...(canvasId==='weightChart'?[{label:'Średnia 7-dniowa (kg)',data:rollingWeightMean(points,actual),borderColor:light?'#427f94':'#8ad5f3',backgroundColor:'transparent',fill:false,tension:.3,spanGaps:false,pointRadius:0,pointHoverRadius:3,borderWidth:2,borderDash:[5,4]}]:[])]},options:{responsive:true,maintainAspectRatio:false,animation:false,locale:'pl-PL',plugins:{legend:{display:false},tooltip:{callbacks:{title(items){return points[items[0].dataIndex]?.date?fmtDay(points[items[0].dataIndex].date):''},label(ctx){return ctx.datasetIndex===1?`Średnia 7-dniowa: ${fmtNum(ctx.parsed.y)} kg`:`${LABELS[key]}: ${fmtNum(ctx.parsed.y)} ${UNITS[key]}${points[ctx.dataIndex]?.carried?' (ostatni znany pomiar)':''}`}}}},scales:{x:{ticks:{color:textColor,maxTicksLimit:6,maxRotation:0},grid:{display:false},border:{color:gridColor}},y:{ticks:{color:textColor,maxTicksLimit:6},grid:{color:gridColor},border:{display:false}}}}});if(isAnalysis){const summary=$('summary'+canvasId.slice('analysis'.length));if(summary)summary.textContent=deltaText(actual,UNITS[key])}
   })}
 function csvCell(value){const v=String(value??'');return '"'+v.replace(/"/g,'""')+'"'}
 $('exportCsv').addEventListener('click',()=>{const headers=['data','masa_kg','talia_cm','biodra_cm','klatka_cm','udo_cm','ramie_cm','notatka'];const rows=state.records.map(r=>[r.measured_at,...FIELDS.map(f=>r[f]),r.note]);const csv='\ufeff'+[headers,...rows].map(row=>row.map(csvCell).join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`BodyMetrics-pomiary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
