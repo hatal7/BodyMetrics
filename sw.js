@@ -1,4 +1,4 @@
-const CACHE='bodymetrics-shell-v8';
+const CACHE='bodymetrics-shell-v9';
 const FILES=['./','./index.html','./app.js','./config.js','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('bodymetrics-shell-')&&k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()])));

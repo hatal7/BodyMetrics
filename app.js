@@ -3,6 +3,13 @@ const $=id=>document.getElementById(id);
 const FIELDS=['weight','waist','hips','chest','thigh','arm'];
 const LABELS={weight:'Masa ciała',waist:'Talia',hips:'Biodra',chest:'Klatka piersiowa',thigh:'Udo',arm:'Ramię'};
 const UNITS={weight:'kg',waist:'cm',hips:'cm',chest:'cm',thigh:'cm',arm:'cm'};
+const CIRC_ICONS={
+  waist:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4c.7 2 1.5 3 3 4"/><path d="M17 4c-.7 2-1.5 3-3 4"/><path d="M10 8c-.4 3-1.5 5-3 7"/><path d="M14 8c.4 3 1.5 5 3 7"/><path d="M8 18c1.3-.8 2.7-1.2 4-1.2S14.7 17.2 16 18"/></svg>`,
+  hips:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4c0 2-1 3.5-1 5.5V12"/><path d="M15 4c0 2 1 3.5 1 5.5V12"/><path d="M8 12c0 4 1.2 6 2.2 8"/><path d="M16 12c0 4-1.2 6-2.2 8"/><path d="M10.2 20h3.6"/></svg>`,
+  chest:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4c-.2 2.3-1.2 3.9-3 5"/><path d="M15 4c.2 2.3 1.2 3.9 3 5"/><path d="M6 9v9"/><path d="M18 9v9"/><path d="M9.5 11.5 12 9l2.5 2.5"/></svg>`,
+  thigh:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4c.2 4-1 7-2.5 10"/><path d="M14 4c-.2 4 1 7 2.5 10"/><path d="M7.5 14.2c-.5 2.1-.6 4.1-.2 5.8"/><path d="M16.5 14.2c.5 2.1.6 4.1.2 5.8"/></svg>`,
+  arm:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 14c1-1.8 1.8-3 4-3 1.5 0 2.5.8 3 2.3"/><path d="M7 15c0 3 2.4 5 6.2 5 3.2 0 5.3-1.5 5.8-4.3"/><path d="M11 11c-.2-2.5.8-4.5 2.6-5.6"/></svg>`
+};
 const CHARTS={weightChart:'weight',analysisWeight:'weight',analysisWaist:'waist',analysisHips:'hips',analysisChest:'chest',analysisThigh:'thigh',analysisArm:'arm'};
 const state={client:null,user:null,records:[],charts:{},tab:'dashboard',range:{dashboard:'all',analysis:'30'},authMode:'login',editing:null,busy:false,loadSeq:0};
 function localDate(d=new Date()){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
@@ -101,7 +108,7 @@ function renderCircumferenceChanges(){
   const records=state.records.filter(r=>FIELDS.some(f=>f!=='weight'&&r[f]!=null));
   const dates=records.map(r=>r.measured_at);
   const beforeFrom=from.value,beforeTo=to.value;
-  for(const el of [from,to])el.replaceChildren(...dates.map(date=>new Option(fmtDay(date),date)));
+  for(const node of [from,to])node.replaceChildren(...dates.map(date=>new Option(fmtDay(date),date)));
   from.value=dates.includes(beforeFrom)?beforeFrom:(dates.length>1?dates.at(-2):dates[0]||'');
   to.value=dates.includes(beforeTo)?beforeTo:(dates.at(-1)||'');
   const earlier=state.records.find(r=>r.measured_at===from.value),later=state.records.find(r=>r.measured_at===to.value);
@@ -110,8 +117,14 @@ function renderCircumferenceChanges(){
     const current=later?.[key],old=earlier?.[key],valid=current!=null&&old!=null;
     const delta=valid?Math.round((Number(current)-Number(old))*10)/10:null;
     const trend=delta===null||delta===0?'same':delta<0?'down':'up';
-    const label=valid?(delta===0?'Bez zmian':`${delta>0?'+':''}${fmtNum(delta)} cm`):'Brak danych do porównania';
-    return `<div class="circumference-item"><div class="c-label">${LABELS[key]}</div><div class="c-value">${current!=null?fmtNum(current)+' cm':'—'}</div><div class="c-delta ${trend}">${label}</div><div class="hint">${old!=null?'Wcześniej: '+fmtNum(old)+' cm':'Brak wcześniejszego wpisu'}</div></div>`;
+    const label=valid?(delta===0?'— 0,0 cm':`${delta<0?'↓':'↑'} ${delta>0?'+':''}${fmtNum(delta)} cm`):'Brak danych';
+    return `<div class="circ-row">
+      <div class="circ-icon">${CIRC_ICONS[key]||''}</div>
+      <div class="circ-main"><div class="circ-name">${LABELS[key]}</div><div class="circ-sub">Porównanie dwóch wybranych pomiarów</div></div>
+      <div class="circ-col circ-old"><div class="date">${earlier?fmtDay(earlier.measured_at):'—'}</div><div class="num">${old!=null?fmtNum(old)+' cm':'—'}</div></div>
+      <div class="circ-col circ-new"><div class="date">${later?fmtDay(later.measured_at):'—'}</div><div class="num">${current!=null?fmtNum(current)+' cm':'—'}</div></div>
+      <div class="circ-delta ${trend}">${label}</div>
+    </div>`;
   }).join('');
 }
 const quickDialog=$('quickWeightDialog');
@@ -203,9 +216,9 @@ $('measurementForm').addEventListener('submit',async e=>{e.preventDefault();if(s
 });
 function confirmAction(title,message,action){const dialog=$('confirmDialog');$('confirmTitle').textContent=title;$('confirmText').textContent=message;const yes=$('confirmYes'),cancel=$('confirmCancel');yes.disabled=false;yes.onclick=async()=>{yes.disabled=true;try{await action();dialog.close()}catch(error){toast(fromError(error),true)}finally{yes.disabled=false}};cancel.onclick=()=>dialog.close();dialog.showModal()}
 $('deleteAccountData').addEventListener('click',()=>{if(!state.user)return;confirmAction('Usunąć wszystkie pomiary?',`Wszystkie ${state.records.length} wpisy zostaną trwale usunięte. Konto pozostanie aktywne.`,async()=>{const {error}=await state.client.from('measurements').delete().eq('user_id',state.user.id);if(error)throw error;toast('Pomiary zostały usunięte.');await loadRecords()})});
-function chartColor(name){const light=document.documentElement.dataset.theme==='light';return name==='weight'?(light?'#648f26':'#c7f56e'):(light?'#477d95':'#8ad5f3')}
+function chartColor(name){const light=document.documentElement.dataset.theme==='light';return name==='weight'?(light?'#45bda6':'#96f4dd'):(light?'#2f9688':'#6fd5c7')}
 function renderCharts(){if(!state.user||!window.Chart)return;const light=document.documentElement.dataset.theme==='light';const textColor=light?'#647064':'#a4abb9';const gridColor=light?'#dce0d8':'#313741';Object.entries(CHARTS).forEach(([canvasId,key])=>{const isAnalysis=canvasId.startsWith('analysis');if((isAnalysis?'analysis':'dashboard')!==state.tab)return;const canvas=$(canvasId);if(!canvas)return;const actual=valuesFor(rangeRecords(isAnalysis?'analysis':'dashboard'),key),points=key==='weight'?fillWeightChartDays(actual):actual,color=chartColor(key);if(canvasId==='weightChart'){const label=$('dashboardRangeLabel');if(label)label.textContent=({7:'7 dni',30:'30 dni',90:'90 dni','6m':'6 miesięcy','1y':'Rok',all:'Cały okres'})[state.range.dashboard]+' · kg'}const prior=state.charts[canvasId];if(prior){prior.destroy();delete state.charts[canvasId]}
-    state.charts[canvasId]=new Chart(canvas,{type:'line',data:{labels:points.map(p=>fmtDay(p.date).slice(0,5)),datasets:[{label:LABELS[key]+' ('+UNITS[key]+')',data:points.map(p=>p.value),borderColor:color,backgroundColor:color+'24',fill:true,tension:.25,spanGaps:false,pointRadius:(ctx)=>points[ctx.dataIndex]?.carried?0:(points.length>35?1.5:3),pointHoverRadius:5,borderWidth:2.4},...(canvasId==='weightChart'?[{label:'Średnia 7-dniowa (kg)',data:rollingWeightMean(points,actual),borderColor:light?'#427f94':'#8ad5f3',backgroundColor:'transparent',fill:false,tension:.3,spanGaps:false,pointRadius:0,pointHoverRadius:3,borderWidth:2,borderDash:[5,4]}]:[])]},options:{responsive:true,maintainAspectRatio:false,animation:false,locale:'pl-PL',plugins:{legend:{display:false},tooltip:{callbacks:{title(items){return points[items[0].dataIndex]?.date?fmtDay(points[items[0].dataIndex].date):''},label(ctx){return ctx.datasetIndex===1?`Średnia 7-dniowa: ${fmtNum(ctx.parsed.y)} kg`:`${LABELS[key]}: ${fmtNum(ctx.parsed.y)} ${UNITS[key]}${points[ctx.dataIndex]?.carried?' (ostatni znany pomiar)':''}`}}}},scales:{x:{ticks:{color:textColor,maxTicksLimit:6,maxRotation:0},grid:{display:false},border:{color:gridColor}},y:{ticks:{color:textColor,maxTicksLimit:6},grid:{color:gridColor},border:{display:false}}}}});if(isAnalysis){const summary=$('summary'+canvasId.slice('analysis'.length));if(summary)summary.textContent=deltaText(actual,UNITS[key])}
+    state.charts[canvasId]=new Chart(canvas,{type:'line',data:{labels:points.map(p=>fmtDay(p.date).slice(0,5)),datasets:[{label:LABELS[key]+' ('+UNITS[key]+')',data:points.map(p=>p.value),borderColor:color,backgroundColor:color+'24',fill:true,tension:.25,spanGaps:false,pointRadius:(ctx)=>points[ctx.dataIndex]?.carried?0:(points.length>35?1.5:3),pointHoverRadius:5,borderWidth:2.4},...(canvasId==='weightChart'?[{label:'Średnia 7-dniowa (kg)',data:rollingWeightMean(points,actual),borderColor:light?'#2f9688':'#6fd5c7',backgroundColor:'transparent',fill:false,tension:.3,spanGaps:false,pointRadius:0,pointHoverRadius:3,borderWidth:2,borderDash:[5,4]}]:[])]},options:{responsive:true,maintainAspectRatio:false,animation:false,locale:'pl-PL',plugins:{legend:{display:false},tooltip:{backgroundColor:light?'#ffffff':'#101a24',titleColor:light?'#152129':'#f4fbf9',bodyColor:light?'#152129':'#d8e8f0',borderColor:light?'#d9e9e4':'#294050',borderWidth:1,padding:12,displayColors:false,callbacks:{title(items){return points[items[0].dataIndex]?.date?fmtDay(points[items[0].dataIndex].date):''},label(ctx){return ctx.datasetIndex===1?`Średnia 7-dniowa: ${fmtNum(ctx.parsed.y)} kg`:`${LABELS[key]}: ${fmtNum(ctx.parsed.y)} ${UNITS[key]}${points[ctx.dataIndex]?.carried?' (ostatni znany pomiar)':''}`}}}},scales:{x:{ticks:{color:textColor,maxTicksLimit:6,maxRotation:0},grid:{display:false},border:{color:gridColor}},y:{ticks:{color:textColor,maxTicksLimit:6},grid:{color:gridColor},border:{display:false}}}}});if(isAnalysis){const summary=$('summary'+canvasId.slice('analysis'.length));if(summary)summary.textContent=deltaText(actual,UNITS[key])}
   })}
 function csvCell(value){const v=String(value??'');return '"'+v.replace(/"/g,'""')+'"'}
 $('exportCsv').addEventListener('click',()=>{const headers=['data','masa_kg','talia_cm','biodra_cm','klatka_cm','udo_cm','ramie_cm','notatka'];const rows=state.records.map(r=>[r.measured_at,...FIELDS.map(f=>r[f]),r.note]);const csv='\ufeff'+[headers,...rows].map(row=>row.map(csvCell).join(';')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`BodyMetrics-pomiary-${localDate()}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
