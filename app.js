@@ -11,24 +11,35 @@ function fmtNum(value,digits=1){return Number(value).toLocaleString('pl-PL',{min
 function esc(str){return String(str??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]))}
 let toastTimeout;function toast(message,error=false){const box=$('toast');box.textContent=message;box.style.color=error?'var(--danger)':'var(--fg)';box.classList.remove('hidden');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>box.classList.add('hidden'),4000)}
 function authMessage(msg,error=false){$('authMessage').textContent=msg;$('authMessage').classList.toggle('error',error);$('authMessage').classList.remove('hidden')}
-function fromError(error){if(!error)return 'Nieznany błąd';if(/Invalid login credentials/i.test(error.message))return 'Nieprawidłowy e-mail lub hasło.';if(/Email not confirmed/i.test(error.message))return 'Potwierdź adres e-mail, korzystając z linku w wiadomości.';if(/already registered/i.test(error.message))return 'Konto z tym adresem już istnieje.';if(/duplicate key|measurements_user_date_key/i.test(error.message))return 'Masz już pomiar w tym dniu. Otwórz go do edycji w Historii.';if(/fetch|network/i.test(error.message))return 'Nie można połączyć się z serwerem. Sprawdź internet.';return error.message||String(error)}
+function fromError(error){if(!error)return 'Nieznany błąd';if(/Invalid login credentials/i.test(error.message))return 'Nieprawidłowy login lub hasło.';if(/Email not confirmed/i.test(error.message))return 'Potwierdź adres e-mail, korzystając z linku w wiadomości.';if(/already registered/i.test(error.message))return 'Konto z tym adresem już istnieje.';if(/duplicate key|measurements_user_date_key/i.test(error.message))return 'Masz już pomiar w tym dniu. Otwórz go do edycji w Historii.';if(/fetch|network/i.test(error.message))return 'Nie można połączyć się z serwerem. Sprawdź internet.';return error.message||String(error)}
 function onlineState(){$('offlineBanner').classList.toggle('hidden',navigator.onLine)}window.addEventListener('online',()=>{onlineState();if(state.user)loadRecords()});window.addEventListener('offline',onlineState);onlineState();
 function initTheme(){let saved='dark';try{saved=localStorage.getItem('bodymetrics-theme')||'dark'}catch{}applyTheme(saved)}
 function applyTheme(mode){mode=mode==='light'?'light':'dark';document.documentElement.dataset.theme=mode;document.querySelectorAll('[data-theme-toggle]').forEach(b=>b.textContent=mode==='light'?'☾':'☀');try{localStorage.setItem('bodymetrics-theme',mode)}catch{}renderCharts()}
 document.addEventListener('click',e=>{if(e.target.closest('[data-theme-toggle]'))applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')});initTheme();
-function updateAuthMode(mode){state.authMode=mode;document.querySelectorAll('[data-auth-mode]').forEach(b=>b.classList.toggle('active',b.dataset.authMode===mode));$('authSubmit').textContent=mode==='login'?'Otwórz panel ↗':'Utwórz konto ↗';$('password').setAttribute('autocomplete',mode==='login'?'current-password':'new-password');$('resetPassword').classList.toggle('hidden',mode!=='login');$('authMessage').classList.add('hidden')}
-document.querySelectorAll('[data-auth-mode]').forEach(b=>b.addEventListener('click',()=>updateAuthMode(b.dataset.authMode)));
 function ensureConfigured(){const cfg=window.BODYMETRICS_CONFIG||{};if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(cfg.url||'')||!cfg.anonKey||/WSTAW|YOUR_|PLACEHOLDER/i.test(cfg.anonKey))return false;if(!window.supabase)return false;state.client=window.supabase.createClient(cfg.url,cfg.anonKey,{auth:{autoRefreshToken:true,persistSession:true,detectSessionInUrl:true}});return true}
 async function init(){if(!ensureConfigured()){authMessage('Aplikacja wymaga ustawienia adresu Supabase i klucza publicznego w pliku config.js oraz uruchomienia database.sql. Instrukcja znajduje się w README.md.',true);$('authSubmit').disabled=true;return}
   state.client.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){showAuth();return}if(session?.user && (!state.user||state.user.id!==session.user.id)){setTimeout(()=>enterApp(session.user),0)}});
   const {data,error}=await state.client.auth.getSession();if(error)authMessage(fromError(error),true);if(data?.session?.user)await enterApp(data.session.user);
 }
-$('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!state.client)return;const email=$('email').value.trim(),password=$('password').value;const btn=$('authSubmit');btn.disabled=true;$('authMessage').classList.add('hidden');try{
-  if(state.authMode==='login'){const {data,error}=await state.client.auth.signInWithPassword({email,password});if(error)throw error;if(data.user)await enterApp(data.user)}
-  else{const {data,error}=await state.client.auth.signUp({email,password});if(error)throw error;if(data.session?.user)await enterApp(data.session.user);else authMessage('Konto utworzone. Jeśli potwierdzanie adresu jest włączone w Supabase, sprawdź skrzynkę e-mail i kliknij link aktywacyjny.')}
-}catch(error){authMessage(fromError(error),true)}finally{btn.disabled=false}});
-$('resetPassword').addEventListener('click',async()=>{if(!state.client)return;const email=$('email').value.trim();if(!email){authMessage('Najpierw wpisz swój adres e-mail.',true);return}const {error}=await state.client.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});authMessage(error?fromError(error):'Jeśli konto istnieje, wysłaliśmy link do ustawienia hasła.',!!error)});
-async function enterApp(user){state.user=user;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('userChip').textContent=user.email||'Moje konto';$('accountEmail').textContent=user.email||'—';$('today').textContent=new Date().toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});$('measuredAt').value=localDate();showTab('dashboard');await loadRecords()}
+$('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!state.client)return;
+  const username=$('username').value.trim().toLowerCase(),password=$('password').value;
+  const btn=$('authSubmit');btn.disabled=true;$('authMessage').classList.add('hidden');
+  try{
+    if(!/^[a-z0-9_]{3,30}$/.test(username))throw new Error('Login musi mieć od 3 do 30 znaków: małe litery, cyfry lub _.');
+    const config=window.BODYMETRICS_CONFIG;
+    const response=await fetch(config.url.replace(/\/$/,'')+'/functions/v1/login-by-username',{
+      method:'POST',headers:{'Content-Type':'application/json','apikey':config.anonKey},
+      body:JSON.stringify({username,password})
+    });
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(response.status===401?'Nieprawidłowy login lub hasło.':(payload.error||'Nie udało się zalogować.'));
+    if(!payload.access_token||!payload.refresh_token)throw new Error('Serwer nie zwrócił ważnej sesji.');
+    const {data,error}=await state.client.auth.setSession({access_token:payload.access_token,refresh_token:payload.refresh_token});
+    if(error)throw error;
+    if(data.user)await enterApp(data.user);
+  }catch(error){authMessage(fromError(error),true)}finally{btn.disabled=false}
+});
+async function enterApp(user){state.user=user;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('userChip').textContent='Moje konto';$('accountEmail').textContent='Prywatne konto';$('today').textContent=new Date().toLocaleDateString('pl-PL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});$('measuredAt').value=localDate();showTab('dashboard');await loadRecords()}
 function showAuth(){state.user=null;state.records=[];state.loadSeq++;Object.values(state.charts).forEach(c=>c.destroy());state.charts={};$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('password').value=''}
 async function logout(){const {error}=await state.client.auth.signOut();if(error)toast(fromError(error),true);else showAuth()}
 document.querySelectorAll('[data-logout]').forEach(b=>b.addEventListener('click',logout));

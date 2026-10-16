@@ -33,15 +33,15 @@
     <div class="brand"><div class="mark">↗</div><div><div class="brand-name">BodyMetrics</div><div class="brand-sub">PERSONAL ANALYTICS</div></div></div>
     <h1>Twoje dane.<br>Twój przegląd.</h1>
     <p class="auth-intro">Prywatny panel do zapisywania pomiarów i obserwowania zmian w czasie. Bez ocen i zbędnych rozpraszaczy.</p>
-    <div class="login-toggle"><button type="button" class="active" data-auth-mode="login">Logowanie</button><button type="button" data-auth-mode="register">Nowe konto</button></div>
+    
     <form id="authForm">
-      <label class="field"><span>Adres e-mail</span><input id="email" type="email" autocomplete="email" placeholder="twoj@email.pl" required maxlength="254" /></label>
+      <label class="field"><span>Login</span><input id="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Wpisz swój login" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}" /></label>
       <label class="field"><span>Hasło</span><input id="password" type="password" autocomplete="current-password" minlength="8" placeholder="Minimum 8 znaków" required /></label>
       <button id="authSubmit" class="btn full" type="submit">Otwórz panel ↗</button>
     </form>
     <div id="authMessage" class="notice hidden" role="status"></div>
-    <button id="resetPassword" class="link-btn" type="button">Nie pamiętasz hasła?</button>
-    <p class="auth-foot">Każde konto ma osobną przestrzeń danych. Pomiary zapisują się w Supabase i są dostępne po zalogowaniu na Twoich urządzeniach.</p>
+
+    <p class="auth-foot">Dostęp tylko dla kont utworzonych przez administratora. W razie problemów z logowaniem skontaktuj się z administratorem.</p>
   </div>
 </div>
 <div id="app" class="layout hidden">
